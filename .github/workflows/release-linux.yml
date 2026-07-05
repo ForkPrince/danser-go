@@ -1,13 +1,15 @@
-name: Build & Release Linux
+name: Release Linux
 
 on:
   push:
     branches: [master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build_and_release:
-    name: Build and release Linux version
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
