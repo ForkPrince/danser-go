@@ -217,7 +217,11 @@ func (beatMap *BeatMap) UpdatePlayStats() {
 
 func (beatMap *BeatMap) getPathCache() *files.FileMap {
 	if beatMap.pathCache == nil {
-		beatMap.pathCache, _ = files.NewFileMap(filepath.Join(settings.General.GetSongsDir(), beatMap.Dir))
+		baseDir := beatMap.Dir
+		if !filepath.IsAbs(baseDir) {
+			baseDir = filepath.Join(settings.General.GetSongsDir(), beatMap.Dir)
+		}
+		beatMap.pathCache, _ = files.NewFileMap(baseDir)
 	}
 
 	return beatMap.pathCache

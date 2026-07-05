@@ -55,7 +55,16 @@ var fallbackPathCache *files.FileMap
 var CurrentSkin = defaultName
 var FallbackSkin = defaultName
 
+var SkinDirOverride string
+
 var info *SkinInfo
+
+func getSkinDir() string {
+	if SkinDirOverride != "" {
+		return SkinDirOverride
+	}
+	return settings.General.GetSkinsDir()
+}
 
 func loadDefault() {
 	CurrentSkin = defaultName
@@ -83,7 +92,7 @@ func checkInit() {
 		log.Println("SkinManager: Loading fallback skin:", FallbackSkin)
 
 		var err error
-		fallbackPathCache, err = files.NewFileMap(filepath.Join(settings.General.GetSkinsDir(), FallbackSkin))
+		fallbackPathCache, err = files.NewFileMap(filepath.Join(getSkinDir(), FallbackSkin))
 
 		if err != nil {
 			log.Println("SkinManager:", FallbackSkin, "does not exist, falling back to default...")
@@ -106,7 +115,7 @@ func tryLoadSkin(name, fallbackName string) {
 	log.Println("SkinManager: Loading skin:", name)
 
 	var err error
-	skinPathCache, err = files.NewFileMap(filepath.Join(settings.General.GetSkinsDir(), name))
+	skinPathCache, err = files.NewFileMap(filepath.Join(getSkinDir(), name))
 
 	if err != nil {
 		log.Println(fmt.Sprintf("SkinManager: %s does not exist, falling back to %s...", name, fallbackName))

@@ -16,6 +16,7 @@ import (
 	"github.com/wieku/danser-go/app/ffmpeg"
 	"github.com/wieku/danser-go/app/input"
 	"github.com/wieku/danser-go/app/settings"
+	"github.com/wieku/danser-go/app/skin"
 	"github.com/wieku/danser-go/app/states"
 	"github.com/wieku/danser-go/app/utils"
 	"github.com/wieku/danser-go/build"
@@ -39,6 +40,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -133,7 +135,9 @@ func run() {
 		replay := flag.String("replay", "", replayDesc)
 		flag.StringVar(replay, "r", "", replayDesc+shorthand)
 
-		skin := flag.String("skin", "", "Replace Skin.CurrentSkin setting temporarily")
+		skinFlag := flag.String("skin", "", "Replace Skin.CurrentSkin setting temporarily")
+		skinPath := flag.String("skinpath", "", "Specify a path to a skin folder to use (overrides -skin and skin settings)")
+		osuPath := flag.String("osu", "", "Specify a .osu or .osz file to use directly, bypassing the osu! database")
 
 		noDbCheck := flag.Bool("nodbcheck", false, "Don't validate the database and only import new beatmap sets if there are any. Useful for slow drives.")
 		noUpdCheck := flag.Bool("noupdatecheck", strings.HasPrefix(env.LibDir(), "/usr/lib/"), "Don't check for updates. Speeds up startup if older version of danser is needed for various reasons. Has no effect if danser is running as a linux package")
@@ -170,7 +174,16 @@ func run() {
 		}
 
 		if *out != "" {
-			output = *out
+			if filepath.IsAbs(*out) {
+				ext := filepath.Ext(*out)
+				settings.Recording.OutputDir = filepath.Dir(*out)
+				output = strings.TrimSuffix(filepath.Base(*out), ext)
+				if ext != "" {
+					settings.Recording.Container = strings.TrimPrefix(ext, ".")
+				}
+			} else {
+				output = *out
+			}
 			if math.IsNaN(*ss) {
 				*record = true
 			}
@@ -262,7 +275,7 @@ func run() {
 
 		closeAfterSettingsLoad := false
 
-		if (*md5+*artist+*title+*difficulty+*creator) == "" && *id < 0 {
+		if (*md5+*artist+*title+*difficulty+*creator+*osuPath) == "" && *id < 0 {
 			log.Println("No beatmap specified, closing...")
 			closeAfterSettingsLoad = true
 		}
@@ -285,15 +298,38 @@ func run() {
 			panic(fmt.Sprintf("flag -settings: name \"%s\" is forbidden", *settingsVersion))
 		}
 
-		newSettings := settings.LoadSettings(*settingsVersion)
+		var newSettings bool
+		if *osuPath != "" {
+			settings.CreateDefault()
+			newSettings = true
 
-		if !newSettings {
-			settings.JsonPatch = *sPatch
-			settings.LoadPatch()
-			log.Println("Current config:", settings.GetCompressedString())
+			if *out != "" && filepath.IsAbs(*out) {
+				ext := filepath.Ext(*out)
+				settings.Recording.OutputDir = filepath.Dir(*out)
+				if ext != "" {
+					settings.Recording.Container = strings.TrimPrefix(ext, ".")
+				}
+			}
+
+			if strings.TrimSpace(*skinFlag) != "" {
+				settings.Skin.CurrentSkin = *skinFlag
+			}
+
+			if strings.TrimSpace(*skinPath) != "" {
+				if strings.TrimSpace(*skinFlag) == "" {
+					settings.Skin.CurrentSkin = filepath.Base(*skinPath)
+				}
+				skin.SkinDirOverride = filepath.Dir(*skinPath)
+			}
+		} else {
+			newSettings = settings.LoadSettings(*settingsVersion)
 		}
 
-		if !newSettings && len(os.Args) == 1 {
+		settings.JsonPatch = *sPatch
+		settings.LoadPatch()
+		log.Println("Current config:", settings.GetCompressedString())
+
+		if *osuPath == "" && !newSettings && len(os.Args) == 1 {
 			platform.OpenURL("https://youtu.be/dQw4w9WgXcQ")
 			closeAfterSettingsLoad = true
 		}
@@ -302,65 +338,115 @@ func run() {
 		var beatMap *beatmap.BeatMap = nil
 
 		if !closeAfterSettingsLoad {
-			err := database.Init()
-			if err != nil {
-				log.Println("Failed to initialize database:", err)
+			if *osuPath != "" {
+				log.Println("Loading beatmap from:", *osuPath)
+
+				mapPath := *osuPath
+				var cleanupDir string
+
+				if strings.HasSuffix(strings.ToLower(mapPath), ".osz") {
+					cleanupDir, _ = os.MkdirTemp("", "danser-osz-*")
+					log.Println("Extracting .osz to:", cleanupDir)
+
+					_, err := utils.Unzip(mapPath, cleanupDir)
+					if err != nil {
+						log.Println("Failed to extract .osz:", err)
+						closeAfterSettingsLoad = true
+					} else {
+						var osuFiles []string
+						filepath.Walk(cleanupDir, func(path string, info os.FileInfo, err error) error {
+							if err == nil && !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".osu") {
+								osuFiles = append(osuFiles, path)
+							}
+							return nil
+						})
+						if len(osuFiles) == 0 {
+							log.Println("No .osu files found in .osz archive")
+							closeAfterSettingsLoad = true
+						} else {
+							mapPath = osuFiles[0]
+							if len(osuFiles) > 1 {
+								log.Println("Multiple .osu files found, using:", mapPath)
+							}
+						}
+					}
+				}
+
+				if !closeAfterSettingsLoad {
+					var err error
+					beatMap, err = beatmap.ParseBeatMapFromPath(mapPath)
+					if err != nil {
+						log.Println("Failed to parse beatmap:", err)
+						closeAfterSettingsLoad = true
+					} else {
+						beatMap.UpdatePlayStats()
+					}
+				}
+
+				if cleanupDir != "" {
+					defer os.RemoveAll(cleanupDir)
+				}
 			} else {
-				beatmaps := database.LoadBeatmaps(*noDbCheck, nil)
-
-				if *id > -1 {
-					for _, b := range beatmaps {
-						if b.ID == *id {
-							beatMap = b
-
-							break
-						}
-					}
-				} else if *md5 != "" {
-					for _, b := range beatmaps {
-						if strings.EqualFold(b.MD5, *md5) {
-							beatMap = b
-
-							break
-						}
-					}
+				err := database.Init()
+				if err != nil {
+					log.Println("Failed to initialize database:", err)
 				} else {
-					for _, b := range beatmaps {
-						if (*artist == "" || strings.EqualFold(*artist, b.Artist)) &&
-							(*title == "" || strings.EqualFold(*title, b.Name)) &&
-							(*difficulty == "" || strings.EqualFold(*difficulty, b.Difficulty)) &&
-							(*creator == "" || strings.EqualFold(*creator, b.Creator)) {
-							beatMap = b
+					beatmaps := database.LoadBeatmaps(*noDbCheck, nil)
 
-							break
-						}
-					}
-
-					if beatMap == nil {
-						log.Println("Beatmap with exact parameters not found, searching partially...")
+					if *id > -1 {
 						for _, b := range beatmaps {
-							if (*artist == "" || strings.Contains(strings.ToLower(b.Artist), strings.ToLower(*artist))) &&
-								(*title == "" || strings.Contains(strings.ToLower(b.Name), strings.ToLower(*title))) &&
-								(*difficulty == "" || strings.Contains(strings.ToLower(b.Difficulty), strings.ToLower(*difficulty))) &&
-								(*creator == "" || strings.Contains(strings.ToLower(b.Creator), strings.ToLower(*creator))) {
+							if b.ID == *id {
 								beatMap = b
 
 								break
 							}
 						}
+					} else if *md5 != "" {
+						for _, b := range beatmaps {
+							if strings.EqualFold(b.MD5, *md5) {
+								beatMap = b
+
+								break
+							}
+						}
+					} else {
+						for _, b := range beatmaps {
+							if (*artist == "" || strings.EqualFold(*artist, b.Artist)) &&
+								(*title == "" || strings.EqualFold(*title, b.Name)) &&
+								(*difficulty == "" || strings.EqualFold(*difficulty, b.Difficulty)) &&
+								(*creator == "" || strings.EqualFold(*creator, b.Creator)) {
+								beatMap = b
+
+								break
+							}
+						}
+
+						if beatMap == nil {
+							log.Println("Beatmap with exact parameters not found, searching partially...")
+							for _, b := range beatmaps {
+								if (*artist == "" || strings.Contains(strings.ToLower(b.Artist), strings.ToLower(*artist))) &&
+									(*title == "" || strings.Contains(strings.ToLower(b.Name), strings.ToLower(*title))) &&
+									(*difficulty == "" || strings.Contains(strings.ToLower(b.Difficulty), strings.ToLower(*difficulty))) &&
+									(*creator == "" || strings.Contains(strings.ToLower(b.Creator), strings.ToLower(*creator))) {
+									beatMap = b
+
+									break
+								}
+							}
+						}
 					}
 				}
-			}
 
-			if beatMap == nil {
-				log.Println("Beatmap not found, closing...")
-				closeAfterSettingsLoad = true
-			} else {
-				beatMap.UpdatePlayStats()
-				database.UpdatePlayStats(beatMap)
-			}
+				if beatMap == nil {
+					log.Println("Beatmap not found, closing...")
+					closeAfterSettingsLoad = true
+				} else {
+					beatMap.UpdatePlayStats()
+					database.UpdatePlayStats(beatMap)
+				}
 
-			database.Close()
+				database.Close()
+			}
 		}
 
 		assets.Init(build.Stream == "Dev")
@@ -391,12 +477,9 @@ func run() {
 
 		if newSettings {
 			settings.Graphics.SetDefaults(int64(mWidth), int64(mHeight))
-			settings.Save()
-
-			settings.JsonPatch = *sPatch
-			settings.LoadPatch()
-
-			log.Println("Current config:", settings.GetCompressedString())
+			if *osuPath == "" {
+				settings.Save()
+			}
 		}
 
 		if closeAfterSettingsLoad {
@@ -415,8 +498,15 @@ func run() {
 
 		lastSamples = int(settings.Graphics.MSAA)
 
-		if strings.TrimSpace(*skin) != "" {
-			settings.Skin.CurrentSkin = *skin
+		if strings.TrimSpace(*skinFlag) != "" {
+			settings.Skin.CurrentSkin = *skinFlag
+		}
+
+		if strings.TrimSpace(*skinPath) != "" {
+			if strings.TrimSpace(*skinFlag) == "" {
+				settings.Skin.CurrentSkin = filepath.Base(*skinPath)
+			}
+			skin.SkinDirOverride = filepath.Dir(*skinPath)
 		}
 
 		if *quickstart {

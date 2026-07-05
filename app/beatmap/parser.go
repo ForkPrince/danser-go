@@ -149,14 +149,7 @@ var bufferPool = &sync.Pool{
 	},
 }
 
-func ParseBeatMap(beatMap *BeatMap) error {
-	file, err := os.Open(filepath.Join(settings.General.GetSongsDir(), beatMap.Dir, beatMap.File))
-	if err != nil {
-		return err
-	}
-
-	defer file.Close()
-
+func parseBeatMapFromOpenedFile(file *os.File, beatMap *BeatMap) error {
 	scanner := files.NewScanner(file)
 
 	buf := bufferPool.Get().(*[]byte)
@@ -238,6 +231,36 @@ func ParseBeatMap(beatMap *BeatMap) error {
 	return nil
 }
 
+func ParseBeatMap(beatMap *BeatMap) error {
+	file, err := os.Open(filepath.Join(settings.General.GetSongsDir(), beatMap.Dir, beatMap.File))
+	if err != nil {
+		return err
+	}
+
+	defer file.Close()
+
+	return parseBeatMapFromOpenedFile(file, beatMap)
+}
+
+func ParseBeatMapFromPath(path string) (*BeatMap, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer file.Close()
+
+	beatMap := NewBeatMap()
+	beatMap.Dir = filepath.ToSlash(filepath.Dir(path))
+	beatMap.File = filepath.Base(path)
+
+	if err = parseBeatMapFromOpenedFile(file, beatMap); err != nil {
+		return nil, err
+	}
+
+	return beatMap, nil
+}
+
 func ParseBeatMapFile(file *os.File) *BeatMap {
 	beatMap := NewBeatMap()
 	beatMap.Dir, _ = filepath.Rel(settings.General.GetSongsDir(), filepath.Dir(file.Name()))
@@ -301,7 +324,11 @@ func ParseTimingPointsAndPauses(beatMap *BeatMap) {
 }
 
 func ParseObjects(beatMap *BeatMap, diffCalcOnly, parseColors bool) {
-	file, err := os.Open(filepath.Join(settings.General.GetSongsDir(), beatMap.Dir, beatMap.File))
+	baseDir := beatMap.Dir
+	if !filepath.IsAbs(baseDir) {
+		baseDir = filepath.Join(settings.General.GetSongsDir(), beatMap.Dir)
+	}
+	file, err := os.Open(filepath.Join(baseDir, beatMap.File))
 	if err != nil {
 		panic(err)
 	}

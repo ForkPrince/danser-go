@@ -56,16 +56,27 @@ func Init(offscreen bool) {
 	// BASS_CONFIG_MP3_OLDGAPS
 	C.BASS_SetConfig(C.DWORD(68), C.DWORD(1))
 
-	deviceId := -1 //default audio device
 	mixerFlags := C.BASS_MIXER_NONSTOP
 
 	if offscreen {
 		sampleRate = 48000
-		deviceId = 0 //If we're rendering, we don't want BASS to be tied to specific device, especially in headless system
 		mixerFlags |= C.BASS_SAMPLE_FLOAT | C.BASS_STREAM_DECODE
 	}
 
-	if C.BASS_Init(C.int(deviceId), C.DWORD(sampleRate), C.DWORD(0), nil, nil) != 0 {
+	initDevices := []int{-1}
+	if offscreen {
+		initDevices = []int{0, -1}
+	}
+
+	initOk := false
+	for _, deviceId := range initDevices {
+		if C.BASS_Init(C.int(deviceId), C.DWORD(sampleRate), C.DWORD(0), nil, nil) != 0 {
+			initOk = true
+			break
+		}
+	}
+
+	if initOk {
 		log.Println("BASS Initialized!")
 		log.Println("BASS Version:       ", parseVersion(int(C.BASS_GetVersion())))
 		log.Println("BASS FX Version:    ", parseVersion(int(C.BASS_FX_GetVersion())))
@@ -84,6 +95,9 @@ func Init(offscreen bool) {
 		if !offscreen {
 			C.BASS_ChannelPlay(masterMixer, 0)
 		}
+	} else if offscreen {
+		err := GetError()
+		log.Println("BASS init failed (offscreen, continuing without audio):", err.Message())
 	} else {
 		err := GetError()
 		panic(fmt.Sprintf("Failed to run BASS, error id: %d, message: %s", err, err.Message()))
