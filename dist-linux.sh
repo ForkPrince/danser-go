@@ -36,4 +36,6 @@ mkdir -p $TARGET_DIR
 
 go run tools/pack2/pack.go $TARGET_DIR/danser-$exec-linux.zip $BUILD_DIR/
 
+tar -cJf $TARGET_DIR/danser-$exec-linux.tar.xz -C $BUILD_DIR .
+
 rm -rf $BUILD_DIR

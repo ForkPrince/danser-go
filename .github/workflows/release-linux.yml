@@ -35,6 +35,11 @@ jobs:
             echo "Danser failed to build"
             exit 1
           fi
+
+          if [ ! -f "dist/artifacts/danser-${version// /-s}-linux.tar.xz" ]; then
+            echo "Danser tar.xz failed to build"
+            exit 1
+          fi
           echo "VERSION=$version" >> $GITHUB_ENV
 
       - name: Extract repository name
