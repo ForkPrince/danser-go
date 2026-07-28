@@ -2,12 +2,15 @@ package beatmap
 
 import (
 	"cmp"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"github.com/wieku/danser-go/app/beatmap/objects"
 	"github.com/wieku/danser-go/app/settings"
 	"github.com/wieku/danser-go/app/skin"
 	"github.com/wieku/danser-go/framework/files"
 	"github.com/wieku/danser-go/framework/math/mutils"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -256,6 +259,11 @@ func ParseBeatMapFromPath(path string) (*BeatMap, error) {
 
 	if err = parseBeatMapFromOpenedFile(file, beatMap); err != nil {
 		return nil, err
+	}
+
+	hash := md5.New()
+	if _, err = io.Copy(hash, file); err == nil {
+		beatMap.MD5 = hex.EncodeToString(hash.Sum(nil))
 	}
 
 	return beatMap, nil

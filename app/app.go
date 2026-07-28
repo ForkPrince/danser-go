@@ -2,6 +2,7 @@ package app
 
 import "C"
 import (
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -36,7 +37,8 @@ import (
 	"github.com/wieku/danser-go/framework/qpc"
 	"github.com/wieku/danser-go/framework/util"
 	"github.com/wieku/rplpa"
-	"io/ioutil"
+	cryptomd5 "crypto/md5"
+	"io"
 	"log"
 	"math"
 	"os"
@@ -211,7 +213,7 @@ func run() {
 		var modsNew []rplpa.ModInfo = nil
 
 		if *replay != "" {
-			bytes, err := ioutil.ReadFile(*replay)
+			bytes, err := os.ReadFile(*replay)
 			if err != nil {
 				panic(err)
 			}
@@ -363,10 +365,31 @@ func run() {
 						if len(osuFiles) == 0 {
 							log.Println("No .osu files found in .osz archive")
 							closeAfterSettingsLoad = true
+						} else if len(osuFiles) == 1 {
+							mapPath = osuFiles[0]
 						} else {
 							mapPath = osuFiles[0]
-							if len(osuFiles) > 1 {
-								log.Println("Multiple .osu files found, using:", mapPath)
+							log.Println("Multiple .osu files found, using:", mapPath)
+							if *md5 != "" {
+								log.Println("Searching for beatmap matching replay MD5...")
+								for _, candidatePath := range osuFiles {
+									f, err := os.Open(candidatePath)
+									if err != nil {
+										continue
+									}
+									hash := cryptomd5.New()
+									_, copyErr := io.Copy(hash, f)
+									f.Close()
+									if copyErr != nil {
+										continue
+									}
+									candidateMD5 := hex.EncodeToString(hash.Sum(nil))
+									if strings.EqualFold(candidateMD5, *md5) {
+										mapPath = candidatePath
+										log.Println("Found matching beatmap:", mapPath)
+										break
+									}
+								}
 							}
 						}
 					}
