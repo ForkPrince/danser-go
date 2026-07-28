@@ -48,7 +48,7 @@ func GetLatestVersionFromGitHub() (url string, tag string, err error) {
 //   - 0.6.7 becomes 600079999
 //   - 0.6.7-s(napshot)12 becomes 600070012
 //   - 1.0.0 becomes 1000000009999
-func TransformVersion(version string) uint64 {
+func TransformVersion(version string) (uint64, error) {
 	currentSplit := strings.Split(version, "-")
 	splitDots := strings.Split(strings.TrimSuffix(currentSplit[0], "b"), ".")
 
@@ -63,10 +63,10 @@ func TransformVersion(version string) uint64 {
 
 	versionInt, err := strconv.ParseUint(strings.Join(splitDots, "")+snapshot, 10, 64)
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
 
-	return versionInt
+	return versionInt, nil
 }
 
 type UpdateStatus int
@@ -91,8 +91,15 @@ func CheckForUpdate() (UpdateStatus, string, error) {
 		return Failed, "", err
 	}
 
-	githubVersion := TransformVersion(tag)
-	exeVersion := TransformVersion(build.VERSION)
+	githubVersion, err := TransformVersion(tag)
+	if err != nil {
+		return Failed, "", err
+	}
+
+	exeVersion, err := TransformVersion(build.VERSION)
+	if err != nil {
+		return Failed, "", err
+	}
 
 	if exeVersion >= githubVersion {
 		if strings.Contains(build.VERSION, "snapshot") {
