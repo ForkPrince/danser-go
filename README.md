@@ -13,7 +13,13 @@ danser-go is a GUI/CLI visualisation tool for osu!standard maps. It can also rec
 
 As danser is in development phase, some things may break. If that happens please fill an issue with as much detail as possible.
 
-**WARNING**: Because of MacOS' poor OpenGL support, danser-go won't run on that platform. Please use dual-booted Windows/Linux instead.
+## Fork changes
+
+* **`-osu` flag**: Load a replay file directly, bypassing the database.
+* **`-skinpath` flag**: Load a skin from any folder.
+* **Absolute `-out` paths**: `-out` accepts full file paths (folder + format).
+* **Beatmap MD5**: matches `-osu` maps to replays via MD5.
+* **Config tweaks**: Changed the defaults to fit my personal preference.
 
 ## Examples
 * [Omoi - Chiisana Koi no Uta (Synth Rock Cover) [Kroytz's EX EX] - TAG2 Mirror Collage](https://youtu.be/Vo0Pbpu113Y)
@@ -75,6 +81,10 @@ If you try to run *danser-cli* without any arguments there's a surprise waiting 
 * `-mods2="[{\"acronym\":\"DT\",\"settings\":{\"speed_change\":1.2}},{\"acronym\":\"HD\"}]"` - displays the map with given mods. It's using lazer's mod structure to support mod settings. If specified, it will override `-replay` mods. As above, adding AT will
   trigger cursordance with replay UI
 * `-skin` - overrides `Skin.CurrentSkin` in settings
+* `-skinpath=path/to/skin` - loads a skin from an arbitrary folder path (overrides `-skin` and skin settings)
+* `-osu=path/to/map.osu` or `-osu=path/to/map.osz` - loads the given `.osu`/`.osz` file directly,
+  bypassing the osu! database. When an `.osz` with multiple difficulties is given, `-md5` selects the
+  matching one
 * `-cs`, `-ar`, `-od`, `-hp` - overrides maps' difficulty settings (values outside of osu!'s normal limits accepted). Ignored if DA (Difficulty Adjust) mod is specified in `-mods2`
 * `-nodbcheck` - skips updating the database with new, changed or deleted maps
 * `-noupdatecheck` - skips checking GitHub for a newer version of danser
