@@ -1,3 +1,6 @@
+> [!WARNING]
+> This fork is archived, I've switched to a [fork of osu!lazer](https://github.com/ForkPrince/osu) instead.
+
 <p align="center">
   <img width="500px" src="assets/textures/coinbig.png"/>
 </p>
